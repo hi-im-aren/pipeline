@@ -253,6 +253,13 @@ func (c *AKSCluster) CreateCluster() error {
 				ClientID: &creds.ClientID,
 				Secret:   &creds.ClientSecret,
 			},
+			NetworkProfile: &containerservice.NetworkProfile{
+				NetworkPlugin:    containerservice.NetworkPlugin(c.modelCluster.AKS.NetworkPlugin),
+				PodCidr:          c.modelCluster.AKS.PodCidr,
+				DockerBridgeCidr: &c.modelCluster.AKS.DockerBridgeCidr,
+				ServiceCidr:      &c.modelCluster.AKS.ServiceCidr,
+				DNSServiceIP:     &c.modelCluster.AKS.DockerBridgeCidr,
+			},
 		},
 	}
 
@@ -865,6 +872,13 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 	}
 	c.log.Debug("Validate kubernetesVersion passed")
 
+	// Validate AKS network profile
+	c.log.Debug("Validate AKS network profile")
+	if err := c.validateNetworkProfile(&r); err != nil {
+		return emperror.Wrap(err, "failed to validate AKS network profile")
+	}
+	c.log.Debug("Validate AKS network profile passed")
+
 	return nil
 }
 
@@ -881,6 +895,44 @@ func (c *AKSCluster) validateLocation(location string) error {
 	if isOk := utils.Contains(validLocations, location); !isOk {
 		return pkgErrors.ErrorNotValidLocation
 	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateNetworkProfile(request *pkgCluster.CreateClusterRequest) error {
+	c.log.Debugln("Docker Bridge Cidr:", request.Properties.CreateClusterAKS.DockerBridgeCidr)
+	c.log.Debugln("Service Cidr:", request.Properties.CreateClusterAKS.ServiceCidr)
+	c.log.Debugln("Dns Service Ip:", request.Properties.CreateClusterAKS.DnsServiceIp)
+
+	networkPlugin := request.Properties.CreateClusterAKS.NetworkPlugin
+	if err := c.validateNetworkPlugin(containerservice.NetworkPlugin(networkPlugin)); err != nil {
+		return emperror.WrapWith(err, "network plugin validation failed", "networkPlugin", networkPlugin)
+	}
+
+	// Azure CNI does not use podCidr field
+	if containerservice.NetworkPlugin(networkPlugin) != containerservice.Azure {
+		podCidr := request.Properties.CreateClusterAKS.PodCidr
+		if err := c.validatePodCidr(podCidr, networkPlugin); err != nil {
+			return emperror.WrapWith(err, "pod CIDR validation failed:", "podCidr", podCidr)
+		}
+	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateNetworkPlugin(networkPlugin containerservice.NetworkPlugin) error {
+	c.log.Debugln("Network plugin:", networkPlugin)
+
+	for _, value := range containerservice.PossibleNetworkPluginValues() {
+		if networkPlugin == value {
+			return nil
+		}
+	}
+	return pkgErrors.ErrorAksNotValidNetworkPluginField
+}
+
+func (c *AKSCluster) validatePodCidr(podCidr string, networkPlugin string) error {
+	c.log.Debugln("Pod Cidr:", podCidr)
 
 	return nil
 }

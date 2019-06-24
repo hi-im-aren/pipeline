@@ -35,6 +35,11 @@ type CreateClusterAKS struct {
 	ResourceGroup     string                     `json:"resourceGroup" yaml:"resourceGroup"`
 	KubernetesVersion string                     `json:"kubernetesVersion" yaml:"kubernetesVersion"`
 	NodePools         map[string]*NodePoolCreate `json:"nodePools,omitempty" yaml:"nodePools,omitempty"`
+	NetworkPlugin     string                     `json:"NetworkPlugin,omitempty" yaml:"NetworkPlugin,omitempty"`
+	DnsServiceIp      string                     `json:"DnsServiceIp,omitempty" yaml:"DnsServiceIp,omitempty"`
+	DockerBridgeCidr  string                     `json:"DockerBridgeCidr,omitempty" yaml:"DockerBridgeCidr,omitempty"`
+	PodCidr           string                     `json:"PodCidr,omitempty" yaml:"PodCidr,omitempty"`
+	ServiceCidr       string                     `json:"ServiceCidr,omitempty" yaml:"ServiceCidr,omitempty"`
 }
 
 // NodePoolCreate describes Azure's node fields of a CreateCluster request

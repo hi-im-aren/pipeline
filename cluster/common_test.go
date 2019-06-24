@@ -33,24 +33,29 @@ import (
 )
 
 const (
-	clusterRequestName          = "testName"
-	clusterRequestLocation      = "testLocation"
-	clusterRequestNodeInstance  = "testInstance"
-	clusterRequestNodeCount     = 1
-	clusterRequestRG            = "testResourceGroup"
-	clusterRequestKubernetes    = "1.9.6"
-	clusterRequestKubernetesEKS = "1.10"
-	clusterRequestAgentName     = "testAgent"
-	clusterRequestSpotPrice     = "1.2"
-	clusterRequestNodeMinCount  = 1
-	clusterRequestNodeMaxCount  = 2
-	clusterRequestNodeImage     = "testImage"
-	organizationId              = 1
-	userId                      = 1
-	clusterKubeMetaKey          = "metaKey"
-	clusterKubeMetaValue        = "metaValue"
-	secretName                  = "test-secret-name"
-	pool1Name                   = "pool1"
+	clusterRequestName             = "testName"
+	clusterRequestLocation         = "testLocation"
+	clusterRequestNodeInstance     = "testInstance"
+	clusterRequestNodeCount        = 1
+	clusterRequestRG               = "testResourceGroup"
+	clusterRequestKubernetes       = "1.9.6"
+	clusterRequestKubernetesEKS    = "1.10"
+	clusterRequestAgentName        = "testAgent"
+	clusterRequestSpotPrice        = "1.2"
+	clusterRequestNodeMinCount     = 1
+	clusterRequestNodeMaxCount     = 2
+	clusterRequestNodeImage        = "testImage"
+	clusterRequestNetworkPlugin    = "kubenet"
+	clusterRequestPodCidr          = "10.244.0.0/16"
+	clusterRequestDnsServiceIp     = "10.0.0.10"
+	clusterRequestServiceCidr      = "10.0.0.0/16"
+	clusterRequestDockerBridgeCidr = "172.17.0.1/16"
+	organizationId                 = 1
+	userId                         = 1
+	clusterKubeMetaKey             = "metaKey"
+	clusterKubeMetaValue           = "metaValue"
+	secretName                     = "test-secret-name"
+	pool1Name                      = "pool1"
 )
 
 // nolint: gochecknoglobals
@@ -242,6 +247,11 @@ var (
 			CreateClusterAKS: &aks.CreateClusterAKS{
 				ResourceGroup:     clusterRequestRG,
 				KubernetesVersion: clusterRequestKubernetes,
+				DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
+				ServiceCidr:       clusterRequestServiceCidr,
+				DnsServiceIp:      clusterRequestDnsServiceIp,
+				PodCidr:           clusterRequestPodCidr,
+				NetworkPlugin:     clusterRequestNetworkPlugin,
 				NodePools: map[string]*aks.NodePoolCreate{
 					clusterRequestAgentName: {
 						Autoscaling:      true,
@@ -265,6 +275,11 @@ var (
 			CreateClusterAKS: &aks.CreateClusterAKS{
 				ResourceGroup:     clusterRequestRG,
 				KubernetesVersion: clusterRequestKubernetes,
+				DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
+				ServiceCidr:       clusterRequestServiceCidr,
+				DnsServiceIp:      clusterRequestDnsServiceIp,
+				PodCidr:           clusterRequestPodCidr,
+				NetworkPlugin:     clusterRequestNetworkPlugin,
 				NodePools: map[string]*aks.NodePoolCreate{
 					clusterRequestAgentName: {
 						Count:            clusterRequestNodeCount,
@@ -363,6 +378,11 @@ var (
 		AKS: model.AKSClusterModel{
 			ResourceGroup:     clusterRequestRG,
 			KubernetesVersion: clusterRequestKubernetes,
+			NetworkPlugin:     clusterRequestNetworkPlugin,
+			PodCidr:           clusterRequestPodCidr,
+			DnsServiceIp:      clusterRequestDnsServiceIp,
+			ServiceCidr:       clusterRequestServiceCidr,
+			DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
 			NodePools: []*model.AKSNodePoolModel{
 				{
 					CreatedBy:        userId,

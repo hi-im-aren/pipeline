@@ -61,6 +61,7 @@ var (
 	ErrorBucketDeleteNotEmpty                  = errors.New("non empty buckets can not be deleted")
 	ErrorGkeSubnetRequiredFieldIsEmpty         = errors.New("'subnet' field required if 'vpc' is set")
 	ErrorGkeVPCRequiredFieldIsEmpty            = errors.New("'vpc' field required if 'subnet' is set")
+	ErrorAksNotValidNetworkPluginField         = errors.New("'NetworkPlugin' field is not valid")
 
 	ErrorFunctionShouldNotBeCalled = errors.New("error function should not be called")
 )
