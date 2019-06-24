@@ -89,6 +89,11 @@ func CreateAKSClusterFromRequest(request *pkgCluster.CreateClusterRequest, orgID
 			ResourceGroup:     request.Properties.CreateClusterAKS.ResourceGroup,
 			KubernetesVersion: request.Properties.CreateClusterAKS.KubernetesVersion,
 			NodePools:         nodePools,
+			PodCidr:           request.Properties.CreateClusterAKS.Network.PodCidr,
+			NetworkPlugin:     request.Properties.CreateClusterAKS.Network.NetworkPlugin,
+			ServiceCidr:       request.Properties.CreateClusterAKS.Network.ServiceCidr,
+			DnsServiceIp:      request.Properties.CreateClusterAKS.Network.DnsServiceIp,
+			DockerBridgeCidr:  request.Properties.CreateClusterAKS.Network.DockerBridgeCidr,
 		},
 		TtlMinutes: request.TtlMinutes,
 	}
@@ -255,7 +260,7 @@ func (c *AKSCluster) CreateCluster() error {
 			},
 			NetworkProfile: &containerservice.NetworkProfile{
 				NetworkPlugin:    containerservice.NetworkPlugin(c.modelCluster.AKS.NetworkPlugin),
-				PodCidr:          c.modelCluster.AKS.PodCidr,
+				PodCidr:          &c.modelCluster.AKS.PodCidr,
 				DockerBridgeCidr: &c.modelCluster.AKS.DockerBridgeCidr,
 				ServiceCidr:      &c.modelCluster.AKS.ServiceCidr,
 				DNSServiceIP:     &c.modelCluster.AKS.DockerBridgeCidr,
@@ -872,12 +877,14 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 	}
 	c.log.Debug("Validate kubernetesVersion passed")
 
-	// Validate AKS network profile
-	c.log.Debug("Validate AKS network profile")
-	if err := c.validateNetworkProfile(&r); err != nil {
-		return emperror.Wrap(err, "failed to validate AKS network profile")
+	if r.Properties.CreateClusterAKS.Network != nil {
+		// Validate AKS network profile
+		c.log.Debug("Validate AKS network profile")
+		if err := c.validateNetwork(r); err != nil {
+			return emperror.Wrap(err, "failed to validate AKS network profile")
+		}
+		c.log.Debug("Validate AKS network profile passed")
 	}
-	c.log.Debug("Validate AKS network profile passed")
 
 	return nil
 }
@@ -899,19 +906,19 @@ func (c *AKSCluster) validateLocation(location string) error {
 	return nil
 }
 
-func (c *AKSCluster) validateNetworkProfile(request *pkgCluster.CreateClusterRequest) error {
-	c.log.Debugln("Docker Bridge Cidr:", request.Properties.CreateClusterAKS.DockerBridgeCidr)
-	c.log.Debugln("Service Cidr:", request.Properties.CreateClusterAKS.ServiceCidr)
-	c.log.Debugln("Dns Service Ip:", request.Properties.CreateClusterAKS.DnsServiceIp)
+func (c *AKSCluster) validateNetwork(request *pkgCluster.CreateClusterRequest) error {
+	c.log.Debugln("Docker Bridge Cidr:", request.Properties.CreateClusterAKS.Network.DockerBridgeCidr)
+	c.log.Debugln("Service Cidr:", request.Properties.CreateClusterAKS.Network.ServiceCidr)
+	c.log.Debugln("Dns Service Ip:", request.Properties.CreateClusterAKS.Network.DnsServiceIp)
 
-	networkPlugin := request.Properties.CreateClusterAKS.NetworkPlugin
+	networkPlugin := request.Properties.CreateClusterAKS.Network.NetworkPlugin
 	if err := c.validateNetworkPlugin(containerservice.NetworkPlugin(networkPlugin)); err != nil {
 		return emperror.WrapWith(err, "network plugin validation failed", "networkPlugin", networkPlugin)
 	}
 
 	// Azure CNI does not use podCidr field
 	if containerservice.NetworkPlugin(networkPlugin) != containerservice.Azure {
-		podCidr := request.Properties.CreateClusterAKS.PodCidr
+		podCidr := request.Properties.CreateClusterAKS.Network.PodCidr
 		if err := c.validatePodCidr(podCidr, networkPlugin); err != nil {
 			return emperror.WrapWith(err, "pod CIDR validation failed:", "podCidr", podCidr)
 		}
@@ -1011,10 +1018,15 @@ func (c *AKSCluster) GetK8sIpv4Cidrs() (*pkgCluster.Ipv4Cidrs, error) {
 		return nil, emperror.Wrap(err, "failed to retrieve AKS cluster")
 	}
 
-	return &pkgCluster.Ipv4Cidrs{
-		ServiceClusterIPRanges: []string{*cluster.NetworkProfile.ServiceCidr},
-		PodIPRanges:            []string{*cluster.NetworkProfile.PodCidr},
-	}, nil
+	if cluster.NetworkProfile.NetworkPlugin == containerservice.Kubenet {
+		return &pkgCluster.Ipv4Cidrs{
+			ServiceClusterIPRanges: []string{*cluster.NetworkProfile.ServiceCidr},
+			PodIPRanges:            []string{*cluster.NetworkProfile.PodCidr},
+		}, nil
+	}
+
+	//TODO AKS cluster with Azure CNI does not use podCidr
+	return nil, emperror.Wrap(err, "failed to retrieve AKS cluster podCidr")
 }
 
 // GetK8sConfig returns the Kubernetes config

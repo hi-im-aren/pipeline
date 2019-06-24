@@ -7,6 +7,7 @@ Name | Type | Description | Notes
 **KubernetesVersion** | **string** |  | 
 **NodePools** | [**map[string]NodePoolsAzure**](NodePoolsAzure.md) |  | 
 **VnetSubnetID** | **string** |  | [optional] 
+**Network** | [**map[string]NetworkAzure**](NetworkAzure.md) |  | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

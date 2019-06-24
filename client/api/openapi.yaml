@@ -8623,6 +8623,24 @@ components:
       required:
       - aks
       type: object
+    NetworkAzure:
+      properties:
+        networkPlugin:
+          example: kubenet
+          type: string
+        podCidr:
+          example: 10.244.0.0/16
+          type: string
+        serviceCidr:
+          example: 10.0.0.0/16
+          type: string
+        dnsServiceIp:
+          example: 10.0.0.10
+          type: string
+        dockerBridgeCidr:
+          example: 172.17.0.1/16
+          type: string
+      type: object
     NodePoolsAzure:
       properties:
         autoscaling:
@@ -13639,6 +13657,10 @@ components:
         vnetSubnetID:
           example: /subscriptions/12345678-1234-5678-1234-123456789abc/resourceGroups/your-resource-group-name/providers/Microsoft.Network/virtualNetworks/your-vnet-name/subnets/your-vnet-subnet-name
           type: string
+        network:
+          additionalProperties:
+            $ref: '#/components/schemas/NetworkAzure'
+          type: object
       required:
       - kubernetesVersion
       - nodePools

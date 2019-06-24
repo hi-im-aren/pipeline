@@ -344,6 +344,7 @@ Class | Method | HTTP request | Description
  - [LoggingPostHook](docs/LoggingPostHook.md)
  - [LoggingPostHookInstallLogging](docs/LoggingPostHookInstallLogging.md)
  - [MappingRule](docs/MappingRule.md)
+ - [NetworkAzure](docs/NetworkAzure.md)
  - [NodeItem](docs/NodeItem.md)
  - [NodeItemMetadata](docs/NodeItemMetadata.md)
  - [NodeItemMetadataAnnotations](docs/NodeItemMetadataAnnotations.md)

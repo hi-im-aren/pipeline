@@ -16,4 +16,5 @@ type CreateAksPropertiesAks struct {
 	KubernetesVersion string                    `json:"kubernetesVersion"`
 	NodePools         map[string]NodePoolsAzure `json:"nodePools"`
 	VnetSubnetID      string                    `json:"vnetSubnetID,omitempty"`
+	Network           map[string]NetworkAzure   `json:"network,omitempty"`
 }

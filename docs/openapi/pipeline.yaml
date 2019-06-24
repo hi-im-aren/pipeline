@@ -7569,6 +7569,28 @@ components:
                         vnetSubnetID:
                             type: string
                             example: "/subscriptions/12345678-1234-5678-1234-123456789abc/resourceGroups/your-resource-group-name/providers/Microsoft.Network/virtualNetworks/your-vnet-name/subnets/your-vnet-subnet-name"
+                        network:
+                            type: object
+                            additionalProperties:
+                                $ref: '#/components/schemas/NetworkAzure'
+        NetworkAzure:
+            type: object
+            properties:
+                networkPlugin:
+                    type: string
+                    example: "kubenet"
+                podCidr:
+                    type: string
+                    example: "10.244.0.0/16"
+                serviceCidr:
+                    type: string
+                    example: "10.0.0.0/16"
+                dnsServiceIp:
+                    type: string
+                    example: "10.0.0.10"
+                dockerBridgeCidr:
+                    type: string
+                    example: "172.17.0.1/16"
 
         NodePoolsAzure:
             type: object

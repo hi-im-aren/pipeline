@@ -35,6 +35,10 @@ type CreateClusterAKS struct {
 	ResourceGroup     string                     `json:"resourceGroup" yaml:"resourceGroup"`
 	KubernetesVersion string                     `json:"kubernetesVersion" yaml:"kubernetesVersion"`
 	NodePools         map[string]*NodePoolCreate `json:"nodePools,omitempty" yaml:"nodePools,omitempty"`
+	Network           *NetworkCreate			 `json:"network,omitempty" yaml:"network,omitempty"`
+}
+
+type NetworkCreate struct {
 	NetworkPlugin     string                     `json:"NetworkPlugin,omitempty" yaml:"NetworkPlugin,omitempty"`
 	DnsServiceIp      string                     `json:"DnsServiceIp,omitempty" yaml:"DnsServiceIp,omitempty"`
 	DockerBridgeCidr  string                     `json:"DockerBridgeCidr,omitempty" yaml:"DockerBridgeCidr,omitempty"`
