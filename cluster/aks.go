@@ -17,6 +17,8 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"math"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -43,7 +45,9 @@ import (
 )
 
 const (
-	poolNameKey = "poolName"
+	poolNameKey                              = "poolName"
+	kubenetDefaultMaxPodCountPerNode  uint64 = 110
+	azureCNIDefaultMaxPodCountPerNode uint64 = 30
 )
 
 // nolint: gochecknoglobals
@@ -74,28 +78,45 @@ func CreateAKSClusterFromRequest(request *pkgCluster.CreateClusterRequest, orgID
 			Labels:           np.Labels,
 		})
 	}
-
 	var cluster AKSCluster
 
-	cluster.modelCluster = &model.ClusterModel{
-		Name:           request.Name,
-		Location:       request.Location,
-		Cloud:          request.Cloud,
-		OrganizationId: orgID,
-		CreatedBy:      userID,
-		SecretId:       request.SecretId,
-		Distribution:   pkgCluster.AKS,
-		AKS: model.AKSClusterModel{
-			ResourceGroup:     request.Properties.CreateClusterAKS.ResourceGroup,
-			KubernetesVersion: request.Properties.CreateClusterAKS.KubernetesVersion,
-			NodePools:         nodePools,
-			PodCidr:           request.Properties.CreateClusterAKS.Network.PodCidr,
-			NetworkPlugin:     request.Properties.CreateClusterAKS.Network.NetworkPlugin,
-			ServiceCidr:       request.Properties.CreateClusterAKS.Network.ServiceCidr,
-			DnsServiceIp:      request.Properties.CreateClusterAKS.Network.DnsServiceIp,
-			DockerBridgeCidr:  request.Properties.CreateClusterAKS.Network.DockerBridgeCidr,
-		},
-		TtlMinutes: request.TtlMinutes,
+	if network := request.Properties.CreateClusterAKS.Network; network != nil {
+		cluster.modelCluster = &model.ClusterModel{
+			Name:           request.Name,
+			Location:       request.Location,
+			Cloud:          request.Cloud,
+			OrganizationId: orgID,
+			CreatedBy:      userID,
+			SecretId:       request.SecretId,
+			Distribution:   pkgCluster.AKS,
+			AKS: model.AKSClusterModel{
+				ResourceGroup:     request.Properties.CreateClusterAKS.ResourceGroup,
+				KubernetesVersion: request.Properties.CreateClusterAKS.KubernetesVersion,
+				NodePools:         nodePools,
+				PodCidr:           network.PodCidr,
+				NetworkPlugin:     &network.NetworkPlugin,
+				ServiceCidr:       &network.ServiceCidr,
+				DnsServiceIp:      &network.DnsServiceIp,
+				DockerBridgeCidr:  &network.DockerBridgeCidr,
+			},
+			TtlMinutes: request.TtlMinutes,
+		}
+	} else {
+		cluster.modelCluster = &model.ClusterModel{
+			Name:           request.Name,
+			Location:       request.Location,
+			Cloud:          request.Cloud,
+			OrganizationId: orgID,
+			CreatedBy:      userID,
+			SecretId:       request.SecretId,
+			Distribution:   pkgCluster.AKS,
+			AKS: model.AKSClusterModel{
+				ResourceGroup:     request.Properties.CreateClusterAKS.ResourceGroup,
+				KubernetesVersion: request.Properties.CreateClusterAKS.KubernetesVersion,
+				NodePools:         nodePools,
+			},
+			TtlMinutes: request.TtlMinutes,
+		}
 	}
 
 	cluster.log = log.WithField("cluster", request.Name)
@@ -236,6 +257,15 @@ func (c *AKSCluster) CreateCluster() error {
 	c.log.Debug("successfully retreived credentials")
 	dnsPrefix := "dnsprefix"
 	adminUsername := "pipeline"
+
+	var networkPlugin containerservice.NetworkPlugin
+
+	if c.modelCluster.AKS.NetworkPlugin == nil {
+		networkPlugin = ""
+	} else {
+		networkPlugin = containerservice.NetworkPlugin(*c.modelCluster.AKS.NetworkPlugin)
+	}
+
 	params := &containerservice.ManagedCluster{
 		Name:     &c.modelCluster.Name,
 		Location: &c.modelCluster.Location,
@@ -259,11 +289,11 @@ func (c *AKSCluster) CreateCluster() error {
 				Secret:   &creds.ClientSecret,
 			},
 			NetworkProfile: &containerservice.NetworkProfile{
-				NetworkPlugin:    containerservice.NetworkPlugin(c.modelCluster.AKS.NetworkPlugin),
-				PodCidr:          &c.modelCluster.AKS.PodCidr,
-				DockerBridgeCidr: &c.modelCluster.AKS.DockerBridgeCidr,
-				ServiceCidr:      &c.modelCluster.AKS.ServiceCidr,
-				DNSServiceIP:     &c.modelCluster.AKS.DockerBridgeCidr,
+				NetworkPlugin:    networkPlugin,
+				PodCidr:          c.modelCluster.AKS.PodCidr,
+				DockerBridgeCidr: c.modelCluster.AKS.DockerBridgeCidr,
+				ServiceCidr:      c.modelCluster.AKS.ServiceCidr,
+				DNSServiceIP:     c.modelCluster.AKS.DnsServiceIp,
 			},
 		},
 	}
@@ -878,9 +908,34 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 	c.log.Debug("Validate kubernetesVersion passed")
 
 	if r.Properties.CreateClusterAKS.Network != nil {
+		// Validate network plugin
+		c.log.Debug("Validate AKS plugin profile")
+		networkPlugin := containerservice.NetworkPlugin(r.Properties.CreateClusterAKS.Network.NetworkPlugin)
+		if err := c.validateNetworkPlugin(networkPlugin); err != nil {
+			return emperror.WrapWith(err, "network plugin validation failed", "networkPlugin", networkPlugin)
+		}
+		c.log.Debug("Validate AKS network plugin passed")
+
+		// Validate nodepool subnets
+		c.log.Debug("Validate nodePool subnet sizes")
+		cloudConnection, err := c.getCloudConnection()
+		if err != nil {
+			return emperror.Wrap(err, "failed to get cloud connection")
+		}
+
+		for _, nodePool := range nodePools {
+			if nodePool.VNetSubnetID != "" {
+				if err := c.validateNodePoolSubnetSize(cloudConnection, nodePool, networkPlugin); err != nil {
+					return emperror.WrapWith(err, "failed to validate nodePool subnet size",
+						"nodePool", nodePool)
+				}
+			}
+		}
+		c.log.Debug("Validate nodePools subnet sizes passed")
+
 		// Validate AKS network profile
 		c.log.Debug("Validate AKS network profile")
-		if err := c.validateNetwork(r); err != nil {
+		if err := c.validateNetwork(r, networkPlugin); err != nil {
 			return emperror.Wrap(err, "failed to validate AKS network profile")
 		}
 		c.log.Debug("Validate AKS network profile passed")
@@ -906,22 +961,30 @@ func (c *AKSCluster) validateLocation(location string) error {
 	return nil
 }
 
-func (c *AKSCluster) validateNetwork(request *pkgCluster.CreateClusterRequest) error {
-	c.log.Debugln("Docker Bridge Cidr:", request.Properties.CreateClusterAKS.Network.DockerBridgeCidr)
-	c.log.Debugln("Service Cidr:", request.Properties.CreateClusterAKS.Network.ServiceCidr)
-	c.log.Debugln("Dns Service Ip:", request.Properties.CreateClusterAKS.Network.DnsServiceIp)
-
-	networkPlugin := request.Properties.CreateClusterAKS.Network.NetworkPlugin
-	if err := c.validateNetworkPlugin(containerservice.NetworkPlugin(networkPlugin)); err != nil {
-		return emperror.WrapWith(err, "network plugin validation failed", "networkPlugin", networkPlugin)
-	}
-
-	// Azure CNI does not use podCidr field
+func (c *AKSCluster) validateNetwork(request *pkgCluster.CreateClusterRequest, networkPlugin containerservice.NetworkPlugin) error {
+	podCidr := request.Properties.CreateClusterAKS.Network.PodCidr
+	// Azure CNI does not use the podCidr field
 	if containerservice.NetworkPlugin(networkPlugin) != containerservice.Azure {
-		podCidr := request.Properties.CreateClusterAKS.Network.PodCidr
-		if err := c.validatePodCidr(podCidr, networkPlugin); err != nil {
+		if err := c.validatePodCidr(*podCidr); err != nil {
 			return emperror.WrapWith(err, "pod CIDR validation failed:", "podCidr", podCidr)
 		}
+	}
+
+	serviceCidr := request.Properties.CreateClusterAKS.Network.ServiceCidr
+	if err := c.validateServiceCidr(serviceCidr); err != nil {
+		return emperror.WrapWith(err, "service CIDR validation failed:", "serviceCidr", serviceCidr)
+	}
+
+	c.log.Debugln("DNS Service IP:", request.Properties.CreateClusterAKS.Network.DnsServiceIp)
+	dnsServiceIp := request.Properties.CreateClusterAKS.Network.ServiceCidr
+	if err := c.validateDnsServiceIp(dnsServiceIp, serviceCidr); err != nil {
+		return emperror.WrapWith(err, "DNS service IP validation failed:", "dnsServiceIp", dnsServiceIp)
+	}
+
+	c.log.Debugln("Docker Bridge CIDR:", request.Properties.CreateClusterAKS.Network.DockerBridgeCidr)
+	dockerBridgeCidr := request.Properties.CreateClusterAKS.Network.DockerBridgeCidr
+	if err := c.validateDockerBridgeCidr(dockerBridgeCidr); err != nil {
+		return emperror.WrapWith(err, "Docker Bridge CIDR validation failed:", "dockerBridgeCidr", dockerBridgeCidr)
 	}
 
 	return nil
@@ -938,8 +1001,111 @@ func (c *AKSCluster) validateNetworkPlugin(networkPlugin containerservice.Networ
 	return pkgErrors.ErrorAksNotValidNetworkPluginField
 }
 
-func (c *AKSCluster) validatePodCidr(podCidr string, networkPlugin string) error {
-	c.log.Debugln("Pod Cidr:", podCidr)
+func (c *AKSCluster) validatePodCidr(podCidr string) error {
+	c.log.Debugln("Pod CIDR:", podCidr)
+
+	if _, _, err := net.ParseCIDR(podCidr); err != nil {
+		return emperror.Wrap(err, "podCidr is not a valid CIDR")
+	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateServiceCidr(serviceCidr string) error {
+	c.log.Debugln("Service CIDR:", serviceCidr)
+
+	//These CIDRs are reserved by AKS
+	reservedCidrs := []string{
+		"169.254.0.0/16",
+		"172.30.0.0/16",
+		"172.31.0.0/16",
+		"192.0.2.0/24",
+	}
+
+	for _, cidr := range reservedCidrs {
+		if serviceCidr == cidr {
+			return errors.New("serviceCidr is a reserved one")
+		}
+	}
+
+	_, subnet, err := net.ParseCIDR(serviceCidr)
+	if err != nil {
+		return emperror.Wrap(err, "serviceCidr is not a valid CIDR")
+	}
+
+	if prefixSize, _ := subnet.Mask.Size(); prefixSize < 12 {
+		return emperror.WrapWith(err, "serviceCidr must be smaller than /12", "prefixSize", prefixSize)
+	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateDnsServiceIp(dnsServiceIp string, serviceCidr string) error {
+	c.log.Debugln("DNS Service IP:", dnsServiceIp)
+
+	ip := net.ParseIP(dnsServiceIp)
+	if ip == nil {
+		return errors.New("DNS service IP is not valid")
+	}
+
+	if _, subnet, _ := net.ParseCIDR(serviceCidr); !subnet.Contains(ip) {
+		return errors.New("dnsServiceIp must be inside the range of serviceCidr")
+	}
+
+	if ip[3] == 1 {
+		return errors.New("dnsServiceIp must not end with .1 since it's reserved")
+	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateDockerBridgeCidr(dockerBridgeCidr string) error {
+	c.log.Debugln("Docker Bridge CIDR:", dockerBridgeCidr)
+
+	_, _, err := net.ParseCIDR(dockerBridgeCidr)
+	if err != nil {
+		return emperror.Wrap(err, "dockerBridgeCidr is not a valid CIDR")
+	}
+
+	return nil
+}
+
+func (c *AKSCluster) validateNodePoolSubnetSize(cloudConnection *pkgAzure.CloudConnection, nodePool *pkgClusterAzure.NodePoolCreate,
+	networkPlugin containerservice.NetworkPlugin) error {
+	matches := vnetSubnetIDRegexp.FindStringSubmatch(nodePool.VNetSubnetID)
+	subnetResponse, err := cloudConnection.GetSubnetsClient().Get(context.TODO(), matches[2], matches[3], matches[4], "")
+	if err != nil {
+		return emperror.Wrap(err, "request to retrieve subnet failed")
+	}
+
+	_, subnet, err := net.ParseCIDR(*subnetResponse.AddressPrefix)
+	if err != nil {
+		return emperror.WrapWith(err, "CIDR parsing failed")
+	}
+
+	hostCount := AddressCount(subnet)
+	maxNodes := uint64(nodePool.MaxCount)
+
+	// Subnet should be large enough to contain max nodes + max pod count on every node + some additional ones
+	if networkPlugin == containerservice.Azure {
+		maxPodCount := maxNodes * azureCNIDefaultMaxPodCountPerNode
+
+		//Some additional temporary ip's for rolling deployments
+		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
+
+		if hostCount < maxNodes+maxPodCount+additionalPods {
+			return errors.New("subnet range is not large enough")
+		}
+	} else if networkPlugin == containerservice.Kubenet {
+		maxPodCount := maxNodes * kubenetDefaultMaxPodCountPerNode
+
+		//Some additional temporary ip's for rolling deployments
+		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
+
+		if hostCount < maxNodes+maxPodCount+additionalPods {
+			return errors.New("subnet range is not large enough")
+		}
+	}
 
 	return nil
 }
@@ -1018,14 +1184,14 @@ func (c *AKSCluster) GetK8sIpv4Cidrs() (*pkgCluster.Ipv4Cidrs, error) {
 		return nil, emperror.Wrap(err, "failed to retrieve AKS cluster")
 	}
 
-	if cluster.NetworkProfile.NetworkPlugin == containerservice.Kubenet {
+	//TODO AKS cluster with Azure CNI does not support podCidr
+	if cluster.NetworkProfile.NetworkPlugin != containerservice.Azure {
 		return &pkgCluster.Ipv4Cidrs{
 			ServiceClusterIPRanges: []string{*cluster.NetworkProfile.ServiceCidr},
 			PodIPRanges:            []string{*cluster.NetworkProfile.PodCidr},
 		}, nil
 	}
 
-	//TODO AKS cluster with Azure CNI does not use podCidr
 	return nil, emperror.Wrap(err, "failed to retrieve AKS cluster podCidr")
 }
 
@@ -1317,4 +1483,12 @@ func validateVNetSubnet(cc *pkgAzure.CloudConnection, resourceGroupName, vnetSub
 		}
 	}
 	return nil
+}
+
+// AddressCount returns the number of distinct host addresses within the given
+// CIDR range.
+// TODO Move to some kind of util?
+func AddressCount(network *net.IPNet) uint64 {
+	prefixLen, bits := network.Mask.Size()
+	return 1 << (uint64(bits) - uint64(prefixLen))
 }

@@ -42,7 +42,7 @@ type NetworkCreate struct {
 	NetworkPlugin     string                     `json:"NetworkPlugin,omitempty" yaml:"NetworkPlugin,omitempty"`
 	DnsServiceIp      string                     `json:"DnsServiceIp,omitempty" yaml:"DnsServiceIp,omitempty"`
 	DockerBridgeCidr  string                     `json:"DockerBridgeCidr,omitempty" yaml:"DockerBridgeCidr,omitempty"`
-	PodCidr           string                     `json:"PodCidr,omitempty" yaml:"PodCidr,omitempty"`
+	PodCidr           *string                     `json:"PodCidr,omitempty" yaml:"PodCidr,omitempty"`
 	ServiceCidr       string                     `json:"ServiceCidr,omitempty" yaml:"ServiceCidr,omitempty"`
 }
 

@@ -194,11 +194,11 @@ type AKSClusterModel struct {
 	ID                uint `gorm:"primary_key"`
 	ResourceGroup     string
 	KubernetesVersion string
-	NetworkPlugin     string
-	DnsServiceIp      string
-	PodCidr           string              `gorm:"size:18"`
-	ServiceCidr       string              `gorm:"size:18"`
-	DockerBridgeCidr  string              `gorm:"size:18"`
+	NetworkPlugin     *string
+	DnsServiceIp      *string
+	PodCidr           *string              `gorm:"size:18"`
+	ServiceCidr       *string              `gorm:"size:18"`
+	DockerBridgeCidr  *string              `gorm:"size:18"`
 	NodePools         []*AKSNodePoolModel `gorm:"foreignkey:ClusterID"`
 }
 
