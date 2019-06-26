@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -82,4 +83,12 @@ func EncodeStringToBase64(s string) string {
 		return base64.StdEncoding.EncodeToString([]byte(s))
 	}
 	return s
+}
+
+
+// AddressCount returns the number of distinct host addresses within the given
+// CIDR range.
+func AddressCount(network *net.IPNet) uint64 {
+	prefixLen, bits := network.Mask.Size()
+	return 1 << (uint64(bits) - uint64(prefixLen))
 }

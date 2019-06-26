@@ -912,7 +912,7 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 		c.log.Debug("Validate AKS plugin profile")
 		networkPlugin := containerservice.NetworkPlugin(r.Properties.CreateClusterAKS.Network.NetworkPlugin)
 		if err := c.validateNetworkPlugin(networkPlugin); err != nil {
-			return emperror.WrapWith(err, "network plugin validation failed", "networkPlugin", networkPlugin)
+			return emperror.WrapWith(err, "network plugin validation failed", "networkPluginKubenet", networkPlugin)
 		}
 		c.log.Debug("Validate AKS network plugin passed")
 
@@ -998,7 +998,7 @@ func (c *AKSCluster) validateNetworkPlugin(networkPlugin containerservice.Networ
 			return nil
 		}
 	}
-	return pkgErrors.ErrorAksNotValidNetworkPluginField
+	return pkgErrors.ErrorAksNetworkPluginFieldNotValid
 }
 
 func (c *AKSCluster) validatePodCidr(podCidr string) error {
@@ -1024,7 +1024,7 @@ func (c *AKSCluster) validateServiceCidr(serviceCidr string) error {
 
 	for _, cidr := range reservedCidrs {
 		if serviceCidr == cidr {
-			return errors.New("serviceCidr is a reserved one")
+			return pkgErrors.ErrorAksNetworkServiceCidrIsReserved
 		}
 	}
 
@@ -1045,15 +1045,15 @@ func (c *AKSCluster) validateDnsServiceIp(dnsServiceIp string, serviceCidr strin
 
 	ip := net.ParseIP(dnsServiceIp)
 	if ip == nil {
-		return errors.New("DNS service IP is not valid")
+		return pkgErrors.ErrorAksNetworkDnsServiceIpNotValid
 	}
 
 	if _, subnet, _ := net.ParseCIDR(serviceCidr); !subnet.Contains(ip) {
-		return errors.New("dnsServiceIp must be inside the range of serviceCidr")
+		return pkgErrors.ErrorAksNetworkDnsServiceIpNotInsideServiceCidr
 	}
 
 	if ip[3] == 1 {
-		return errors.New("dnsServiceIp must not end with .1 since it's reserved")
+		return pkgErrors.ErrorAksNetworkDnsServiceIpInvalidValue
 	}
 
 	return nil
@@ -1083,7 +1083,7 @@ func (c *AKSCluster) validateNodePoolSubnetSize(cloudConnection *pkgAzure.CloudC
 		return emperror.WrapWith(err, "CIDR parsing failed")
 	}
 
-	hostCount := AddressCount(subnet)
+	hostCount := utils.AddressCount(subnet)
 	maxNodes := uint64(nodePool.MaxCount)
 
 	// Subnet should be large enough to contain max nodes + max pod count on every node + some additional ones
@@ -1094,7 +1094,7 @@ func (c *AKSCluster) validateNodePoolSubnetSize(cloudConnection *pkgAzure.CloudC
 		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
 
 		if hostCount < maxNodes+maxPodCount+additionalPods {
-			return errors.New("subnet range is not large enough")
+			return pkgErrors.ErrorAksNetworkNodepoolSubnetNotLargeEnough
 		}
 	} else if networkPlugin == containerservice.Kubenet {
 		maxPodCount := maxNodes * kubenetDefaultMaxPodCountPerNode
@@ -1103,7 +1103,7 @@ func (c *AKSCluster) validateNodePoolSubnetSize(cloudConnection *pkgAzure.CloudC
 		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
 
 		if hostCount < maxNodes+maxPodCount+additionalPods {
-			return errors.New("subnet range is not large enough")
+			return pkgErrors.ErrorAksNetworkNodepoolSubnetNotLargeEnough
 		}
 	}
 
@@ -1485,10 +1485,3 @@ func validateVNetSubnet(cc *pkgAzure.CloudConnection, resourceGroupName, vnetSub
 	return nil
 }
 
-// AddressCount returns the number of distinct host addresses within the given
-// CIDR range.
-// TODO Move to some kind of util?
-func AddressCount(network *net.IPNet) uint64 {
-	prefixLen, bits := network.Mask.Size()
-	return 1 << (uint64(bits) - uint64(prefixLen))
-}

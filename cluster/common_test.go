@@ -33,29 +33,30 @@ import (
 )
 
 const (
-	clusterRequestName             = "testName"
-	clusterRequestLocation         = "testLocation"
-	clusterRequestNodeInstance     = "testInstance"
-	clusterRequestNodeCount        = 1
-	clusterRequestRG               = "testResourceGroup"
-	clusterRequestKubernetes       = "1.9.6"
-	clusterRequestKubernetesEKS    = "1.10"
-	clusterRequestAgentName        = "testAgent"
-	clusterRequestSpotPrice        = "1.2"
-	clusterRequestNodeMinCount     = 1
-	clusterRequestNodeMaxCount     = 2
-	clusterRequestNodeImage        = "testImage"
-	clusterRequestNetworkPlugin    = "kubenet"
-	clusterRequestPodCidr          = "10.244.0.0/16"
-	clusterRequestDnsServiceIp     = "10.0.0.10"
-	clusterRequestServiceCidr      = "10.0.0.0/16"
-	clusterRequestDockerBridgeCidr = "172.17.0.1/16"
-	organizationId                 = 1
-	userId                         = 1
-	clusterKubeMetaKey             = "metaKey"
-	clusterKubeMetaValue           = "metaValue"
-	secretName                     = "test-secret-name"
-	pool1Name                      = "pool1"
+	clusterRequestName                  = "testName"
+	clusterRequestLocation              = "testLocation"
+	clusterRequestNodeInstance          = "testInstance"
+	clusterRequestNodeCount             = 1
+	clusterRequestRG                    = "testResourceGroup"
+	clusterRequestKubernetes            = "1.9.6"
+	clusterRequestKubernetesEKS         = "1.10"
+	clusterRequestAgentName             = "testAgent"
+	clusterRequestSpotPrice             = "1.2"
+	clusterRequestNodeMinCount          = 1
+	clusterRequestNodeMaxCount          = 2
+	clusterRequestNodeImage             = "testImage"
+	clusterRequestNetworkPluginKubenet  = "kubenet"
+	clusterRequestNetworkPluginAzureCNI = "azure"
+	clusterRequestPodCidr               = "10.244.0.0/16"
+	clusterRequestDnsServiceIp          = "10.0.0.10"
+	clusterRequestServiceCidr           = "10.0.0.0/16"
+	clusterRequestDockerBridgeCidr      = "172.17.0.1/16"
+	organizationId                      = 1
+	userId                              = 1
+	clusterKubeMetaKey                  = "metaKey"
+	clusterKubeMetaValue                = "metaValue"
+	secretName                          = "test-secret-name"
+	pool1Name                           = "pool1"
 )
 
 // nolint: gochecknoglobals
@@ -106,6 +107,9 @@ func TestCreateCommonClusterFromRequest(t *testing.T) {
 
 		{name: "aks empty location", createRequest: aksEmptyLocationCreate, expectedModel: nil, expectedError: pkgErrors.ErrorLocationEmpty},
 		{name: "kube empty location and nodeInstanceType", createRequest: kubeEmptyLocation, expectedModel: kubeEmptyLocAndNIT, expectedError: nil},
+
+		{name: "aks create with kubenet network", createRequest: aksKubenetCreateFull, expectedModel: aksModelFull, expectedError: nil},
+		{name: "aks create with azure cni network", createRequest: aksAzureCniCreateFull, expectedModel: aksModelFullAzureCni, expectedError: nil},
 	}
 
 	for _, tc := range cases {
@@ -238,6 +242,13 @@ func TestGetSecretWithValidation(t *testing.T) {
 
 // nolint: gochecknoglobals
 var (
+	dockerBridgeCidr      = clusterRequestDockerBridgeCidr
+	serviceCidr           = clusterRequestServiceCidr
+	dnsServiceIp          = clusterRequestDnsServiceIp
+	podCidr               = clusterRequestPodCidr
+	networkPluginKubenet  = clusterRequestNetworkPluginKubenet
+	networkPluginAzureCni = clusterRequestNetworkPluginAzureCNI
+
 	aksCreateFull = &pkgCluster.CreateClusterRequest{
 		Name:     clusterRequestName,
 		Location: clusterRequestLocation,
@@ -247,11 +258,6 @@ var (
 			CreateClusterAKS: &aks.CreateClusterAKS{
 				ResourceGroup:     clusterRequestRG,
 				KubernetesVersion: clusterRequestKubernetes,
-				DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
-				ServiceCidr:       clusterRequestServiceCidr,
-				DnsServiceIp:      clusterRequestDnsServiceIp,
-				PodCidr:           clusterRequestPodCidr,
-				NetworkPlugin:     clusterRequestNetworkPlugin,
 				NodePools: map[string]*aks.NodePoolCreate{
 					clusterRequestAgentName: {
 						Autoscaling:      true,
@@ -261,6 +267,42 @@ var (
 						NodeInstanceType: clusterRequestNodeInstance,
 						Labels:           clusterRequestNodeLabels,
 					},
+				},
+				Network: &aks.NetworkCreate{
+					DockerBridgeCidr: dockerBridgeCidr,
+					ServiceCidr:      serviceCidr,
+					DnsServiceIp:     dnsServiceIp,
+					PodCidr:          &podCidr,
+					NetworkPlugin:    networkPluginKubenet,
+				},
+			},
+		},
+	}
+
+	aksAzureCniCreateFull = &pkgCluster.CreateClusterRequest{
+		Name:     clusterRequestName,
+		Location: clusterRequestLocation,
+		Cloud:    pkgCluster.Azure,
+		SecretId: string(clusterRequestSecretId),
+		Properties: &pkgCluster.CreateClusterProperties{
+			CreateClusterAKS: &aks.CreateClusterAKS{
+				ResourceGroup:     clusterRequestRG,
+				KubernetesVersion: clusterRequestKubernetes,
+				NodePools: map[string]*aks.NodePoolCreate{
+					clusterRequestAgentName: {
+						Autoscaling:      true,
+						MinCount:         clusterRequestNodeCount,
+						MaxCount:         clusterRequestNodeMaxCount,
+						Count:            clusterRequestNodeCount,
+						NodeInstanceType: clusterRequestNodeInstance,
+						Labels:           clusterRequestNodeLabels,
+					},
+				},
+				Network: &aks.NetworkCreate{
+					DockerBridgeCidr: dockerBridgeCidr,
+					ServiceCidr:      serviceCidr,
+					DnsServiceIp:     dnsServiceIp,
+					NetworkPlugin:    networkPluginAzureCni,
 				},
 			},
 		},
@@ -275,16 +317,48 @@ var (
 			CreateClusterAKS: &aks.CreateClusterAKS{
 				ResourceGroup:     clusterRequestRG,
 				KubernetesVersion: clusterRequestKubernetes,
-				DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
-				ServiceCidr:       clusterRequestServiceCidr,
-				DnsServiceIp:      clusterRequestDnsServiceIp,
-				PodCidr:           clusterRequestPodCidr,
-				NetworkPlugin:     clusterRequestNetworkPlugin,
 				NodePools: map[string]*aks.NodePoolCreate{
 					clusterRequestAgentName: {
 						Count:            clusterRequestNodeCount,
 						NodeInstanceType: clusterRequestNodeInstance,
 					},
+				},
+				Network: &aks.NetworkCreate{
+					DockerBridgeCidr: dockerBridgeCidr,
+					ServiceCidr:      serviceCidr,
+					DnsServiceIp:     dnsServiceIp,
+					PodCidr:          &podCidr,
+					NetworkPlugin:    networkPluginKubenet,
+				},
+			},
+		},
+	}
+
+	aksKubenetCreateFull = &pkgCluster.CreateClusterRequest{
+		Name:     clusterRequestName,
+		Location: clusterRequestLocation,
+		Cloud:    pkgCluster.Azure,
+		SecretId: string(clusterRequestSecretId),
+		Properties: &pkgCluster.CreateClusterProperties{
+			CreateClusterAKS: &aks.CreateClusterAKS{
+				ResourceGroup:     clusterRequestRG,
+				KubernetesVersion: clusterRequestKubernetes,
+				NodePools: map[string]*aks.NodePoolCreate{
+					clusterRequestAgentName: {
+						Autoscaling:      true,
+						MinCount:         clusterRequestNodeCount,
+						MaxCount:         clusterRequestNodeMaxCount,
+						Count:            clusterRequestNodeCount,
+						NodeInstanceType: clusterRequestNodeInstance,
+						Labels:           clusterRequestNodeLabels,
+					},
+				},
+				Network: &aks.NetworkCreate{
+					DockerBridgeCidr: dockerBridgeCidr,
+					ServiceCidr:      serviceCidr,
+					DnsServiceIp:     dnsServiceIp,
+					PodCidr:          &podCidr,
+					NetworkPlugin:    networkPluginKubenet,
 				},
 			},
 		},
@@ -378,11 +452,41 @@ var (
 		AKS: model.AKSClusterModel{
 			ResourceGroup:     clusterRequestRG,
 			KubernetesVersion: clusterRequestKubernetes,
-			NetworkPlugin:     clusterRequestNetworkPlugin,
-			PodCidr:           clusterRequestPodCidr,
-			DnsServiceIp:      clusterRequestDnsServiceIp,
-			ServiceCidr:       clusterRequestServiceCidr,
-			DockerBridgeCidr:  clusterRequestDockerBridgeCidr,
+			NetworkPlugin:     &networkPluginKubenet,
+			PodCidr:           &podCidr,
+			DnsServiceIp:      &dnsServiceIp,
+			ServiceCidr:       &serviceCidr,
+			DockerBridgeCidr:  &dockerBridgeCidr,
+			NodePools: []*model.AKSNodePoolModel{
+				{
+					CreatedBy:        userId,
+					Autoscaling:      true,
+					NodeMinCount:     clusterRequestNodeCount,
+					NodeMaxCount:     clusterRequestNodeMaxCount,
+					Count:            clusterRequestNodeCount,
+					NodeInstanceType: clusterRequestNodeInstance,
+					Name:             clusterRequestAgentName,
+					Labels:           clusterRequestNodeLabels,
+				},
+			},
+		},
+	}
+
+	aksModelFullAzureCni = &model.ClusterModel{
+		CreatedBy:      userId,
+		Name:           clusterRequestName,
+		Location:       clusterRequestLocation,
+		SecretId:       clusterRequestSecretId,
+		Cloud:          pkgCluster.Azure,
+		Distribution:   pkgCluster.AKS,
+		OrganizationId: organizationId,
+		AKS: model.AKSClusterModel{
+			ResourceGroup:     clusterRequestRG,
+			KubernetesVersion: clusterRequestKubernetes,
+			NetworkPlugin:     &networkPluginAzureCni,
+			DnsServiceIp:      &dnsServiceIp,
+			ServiceCidr:       &serviceCidr,
+			DockerBridgeCidr:  &dockerBridgeCidr,
 			NodePools: []*model.AKSNodePoolModel{
 				{
 					CreatedBy:        userId,
