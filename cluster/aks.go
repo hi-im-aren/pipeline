@@ -935,7 +935,7 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 
 		// Validate AKS network profile
 		c.log.Debug("Validate AKS network profile")
-		if err := c.validateNetwork(r, networkPlugin); err != nil {
+		if err := c.ValidateNetwork(r, networkPlugin); err != nil {
 			return emperror.Wrap(err, "failed to validate AKS network profile")
 		}
 		c.log.Debug("Validate AKS network profile passed")
@@ -961,30 +961,30 @@ func (c *AKSCluster) validateLocation(location string) error {
 	return nil
 }
 
-func (c *AKSCluster) validateNetwork(request *pkgCluster.CreateClusterRequest, networkPlugin containerservice.NetworkPlugin) error {
+func (c *AKSCluster) ValidateNetwork(request *pkgCluster.CreateClusterRequest, networkPlugin containerservice.NetworkPlugin) error {
 	podCidr := request.Properties.CreateClusterAKS.Network.PodCidr
 	// Azure CNI does not use the podCidr field
-	if containerservice.NetworkPlugin(networkPlugin) != containerservice.Azure {
+	if networkPlugin == containerservice.Kubenet {
 		if err := c.validatePodCidr(*podCidr); err != nil {
-			return emperror.WrapWith(err, "pod CIDR validation failed:", "podCidr", podCidr)
+			return emperror.WrapWith(err, "pod CIDR validation failed", "podCidr", podCidr)
 		}
 	}
 
 	serviceCidr := request.Properties.CreateClusterAKS.Network.ServiceCidr
 	if err := c.validateServiceCidr(serviceCidr); err != nil {
-		return emperror.WrapWith(err, "service CIDR validation failed:", "serviceCidr", serviceCidr)
+		return emperror.WrapWith(err, "service CIDR validation failed", "serviceCidr", serviceCidr)
 	}
 
 	c.log.Debugln("DNS Service IP:", request.Properties.CreateClusterAKS.Network.DnsServiceIp)
-	dnsServiceIp := request.Properties.CreateClusterAKS.Network.ServiceCidr
+	dnsServiceIp := request.Properties.CreateClusterAKS.Network.DnsServiceIp
 	if err := c.validateDnsServiceIp(dnsServiceIp, serviceCidr); err != nil {
-		return emperror.WrapWith(err, "DNS service IP validation failed:", "dnsServiceIp", dnsServiceIp)
+		return emperror.WrapWith(err, "DNS service IP validation failed", "dnsServiceIp", dnsServiceIp)
 	}
 
 	c.log.Debugln("Docker Bridge CIDR:", request.Properties.CreateClusterAKS.Network.DockerBridgeCidr)
 	dockerBridgeCidr := request.Properties.CreateClusterAKS.Network.DockerBridgeCidr
 	if err := c.validateDockerBridgeCidr(dockerBridgeCidr); err != nil {
-		return emperror.WrapWith(err, "Docker Bridge CIDR validation failed:", "dockerBridgeCidr", dockerBridgeCidr)
+		return emperror.WrapWith(err, "Docker Bridge CIDR validation failed", "dockerBridgeCidr", dockerBridgeCidr)
 	}
 
 	return nil
@@ -1052,7 +1052,8 @@ func (c *AKSCluster) validateDnsServiceIp(dnsServiceIp string, serviceCidr strin
 		return pkgErrors.ErrorAksNetworkDnsServiceIpNotInsideServiceCidr
 	}
 
-	if ip[3] == 1 {
+	//DnsServiceIp should not end with .1 since its a reserved value
+	if ip[15] == 1 {
 		return pkgErrors.ErrorAksNetworkDnsServiceIpInvalidValue
 	}
 
@@ -1484,4 +1485,3 @@ func validateVNetSubnet(cc *pkgAzure.CloudConnection, resourceGroupName, vnetSub
 	}
 	return nil
 }
-
