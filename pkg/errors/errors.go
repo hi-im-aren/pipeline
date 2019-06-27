@@ -62,7 +62,7 @@ var (
 	ErrorGkeSubnetRequiredFieldIsEmpty              = errors.New("'subnet' field required if 'vpc' is set")
 	ErrorGkeVPCRequiredFieldIsEmpty                 = errors.New("'vpc' field required if 'subnet' is set")
 	ErrorAksNetworkPluginFieldNotValid              = errors.New("'NetworkPlugin' field is not valid")
-	ErrorAksNetworkServiceCidrIsReserved            = errors.New("serviceCidr is a reserved one")
+	ErrorAksNetworkServiceCidrIsReserved            = errors.New("serviceCidr is a reserved or overlaps with one")
 	ErrorAksNetworkNodepoolSubnetNotLargeEnough     = errors.New("subnet range is not large enough")
 	ErrorAksNetworkDnsServiceIpNotValid             = errors.New("DNS service IP is not valid")
 	ErrorAksNetworkDnsServiceIpNotInsideServiceCidr = errors.New("dnsServiceIp must be inside the range of serviceCidr")

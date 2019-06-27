@@ -929,6 +929,11 @@ func (c *AKSCluster) ValidateCreationFields(r *pkgCluster.CreateClusterRequest) 
 					return emperror.WrapWith(err, "failed to validate nodePool subnet size",
 						"nodePool", nodePool)
 				}
+				network := r.Properties.CreateClusterAKS.Network
+				if err := c.validateSubnetOverlaps(cloudConnection, nodePool, network); err != nil {
+					return emperror.WrapWith(err, "failed to validate nodePool subnet size",
+						"nodePool", nodePool)
+				}
 			}
 		}
 		c.log.Debug("Validate nodePools subnet sizes passed")
@@ -1022,10 +1027,10 @@ func (c *AKSCluster) validateServiceCidr(serviceCidr string) error {
 		"192.0.2.0/24",
 	}
 
-	for _, cidr := range reservedCidrs {
-		if serviceCidr == cidr {
-			return pkgErrors.ErrorAksNetworkServiceCidrIsReserved
-		}
+	subnets := parseStringCidrs(reservedCidrs, serviceCidr)
+
+	if err := utils.VerifyNoOverlap(subnets); err != nil {
+		return pkgErrors.ErrorAksNetworkServiceCidrIsReserved
 	}
 
 	_, subnet, err := net.ParseCIDR(serviceCidr)
@@ -1038,6 +1043,18 @@ func (c *AKSCluster) validateServiceCidr(serviceCidr string) error {
 	}
 
 	return nil
+}
+
+//parseStringCidrs takes a string slice and a string, parses and merges them to an IPNet slice
+func parseStringCidrs(reservedCidrsStrings []string, serviceCidr string) []*net.IPNet {
+	var reservedCidrs []*net.IPNet
+	for _, subnetString := range reservedCidrsStrings {
+		_, parsedCidr, _ := net.ParseCIDR(subnetString)
+		reservedCidrs = append(reservedCidrs, parsedCidr)
+	}
+	_, parsedParameterCidr, _ := net.ParseCIDR(serviceCidr)
+	reservedCidrs = append(reservedCidrs, parsedParameterCidr)
+	return reservedCidrs
 }
 
 func (c *AKSCluster) validateDnsServiceIp(dnsServiceIp string, serviceCidr string) error {
@@ -1091,21 +1108,55 @@ func (c *AKSCluster) validateNodePoolSubnetSize(cloudConnection *pkgAzure.CloudC
 	if networkPlugin == containerservice.Azure {
 		maxPodCount := maxNodes * azureCNIDefaultMaxPodCountPerNode
 
-		//Some additional temporary ip's for rolling deployments
-		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
+		//Some additional temporary ip's for rolling deployments and reserved ones
+		additionalPods := uint64(math.Ceil(float64(maxPodCount) * 0.1))
 
 		if hostCount < maxNodes+maxPodCount+additionalPods {
 			return pkgErrors.ErrorAksNetworkNodepoolSubnetNotLargeEnough
 		}
 	} else if networkPlugin == containerservice.Kubenet {
-		maxPodCount := maxNodes * kubenetDefaultMaxPodCountPerNode
-
-		//Some additional temporary ip's for rolling deployments
-		additionalPods := uint64(math.Floor(float64(maxPodCount) * 0.1))
-
-		if hostCount < maxNodes+maxPodCount+additionalPods {
+		//plus one ip for node upgrading
+		if hostCount < maxNodes + 1 {
 			return pkgErrors.ErrorAksNetworkNodepoolSubnetNotLargeEnough
 		}
+	}
+
+	return nil
+}
+
+
+func (c *AKSCluster) validateSubnetOverlaps(cloudConnection *pkgAzure.CloudConnection, nodePool *pkgClusterAzure.NodePoolCreate,
+	network *pkgClusterAzure.NetworkCreate) error {
+	matches := vnetSubnetIDRegexp.FindStringSubmatch(nodePool.VNetSubnetID)
+	var addressesToVerify []*net.IPNet
+	subnetResponse, err := cloudConnection.GetSubnetsClient().Get(context.TODO(), matches[2], matches[3], matches[4], "")
+	if err != nil {
+		return emperror.Wrap(err, "request to retrieve subnet failed")
+	}
+
+	_, subnet, err := net.ParseCIDR(*subnetResponse.AddressPrefix)
+	if err != nil {
+		return emperror.WrapWith(err, "CIDR parsing failed on vnet")
+	}
+
+	addressesToVerify = append(addressesToVerify, subnet)
+
+	_, serviceSubnet, err := net.ParseCIDR(network.ServiceCidr)
+	if err != nil {
+		return emperror.WrapWith(err, "CIDR parsing failed on serviceCidr")
+	}
+
+	addressesToVerify = append(addressesToVerify, serviceSubnet)
+
+	_, dockerBridgeSubnet, err := net.ParseCIDR(network.DockerBridgeCidr)
+	if err != nil {
+		return emperror.WrapWith(err, "CIDR parsing failed on dockerBridgeCidr")
+	}
+
+	addressesToVerify = append(addressesToVerify, dockerBridgeSubnet)
+
+	if err := utils.VerifyNoOverlap(addressesToVerify); err != nil {
+		return emperror.Wrap(err, "nodePool's vnet subnet, serviceCidr and dockerBridgeCidr should not overlap")
 	}
 
 	return nil
